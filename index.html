@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Gallery</title>
+    <style>
+        .image-gallery {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .search-bar {
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .images-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            position: relative;
+        }
+
+        .image-item {
+            flex: 1 1 calc(33.333% - 10px);
+            box-sizing: border-box;
+        }
+
+        .image-item img {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .image-preview {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+            border: 2px solid #ccc;
+            background-color: #fff;
+            z-index: 1000;
+        }
+
+        .image-preview img {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .loading-message {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            display: none;
+        }
+
+        .pagination {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .pagination button {
+            margin: 0 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+
+        .pagination button[disabled] {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="image-gallery"></div>
+    <button id="toggleButton">Toggle Scrolling Mode</button>
+    <script>
+        const API_URL = 'http://localhost:3000/images';
+        let images = [];
+        let page = 1;
+        let limit = 10;
+        let query = '';
+        let isInfiniteScrolling = true;
+        let loading = false;
+        let totalImages = 0;
+
+        const imageGallery = document.querySelector('.image-gallery');
+        const toggleButton = document.getElementById('toggleButton');
+
+        const searchBar = document.createElement('div');
+        searchBar.className = 'search-bar';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Search by author';
+        input.addEventListener('input', debounce(() => handleSearch(input.value), 300));
+        searchBar.appendChild(input);
+
+        const imagesContainer = document.createElement('div');
+        imagesContainer.className = 'images-container';
+
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'loading-overlay';
+        loadingOverlay.innerText = 'Loading...';
+
+        const imagePreview = document.createElement('div');
+        imagePreview.className = 'image-preview';
+        imagePreview.style.display = 'none';
+        const img = document.createElement('img');
+        imagePreview.appendChild(img);
+
+        const pagination = document.createElement('div');
+        pagination.className = 'pagination';
+
+        imagesContainer.appendChild(loadingOverlay);
+        imageGallery.appendChild(searchBar);
+        imageGallery.appendChild(imagesContainer);
+        imageGallery.appendChild(imagePreview);
+
+        toggleButton.addEventListener('click', toggleScrollingMode);
+
+        window.addEventListener('scroll', handleScroll);
+
+        fetchAndRenderImages();
+
+        function renderPagination(currentPage, totalPages) {
+            pagination.innerHTML = '';
+            for (let i = 1; i <= totalPages; i++) {
+                const pageButton = document.createElement('button');
+                pageButton.innerText = i;
+                pageButton.disabled = i === currentPage;
+                pageButton.addEventListener('click', () => handlePageChange(i));
+                pagination.appendChild(pageButton);
+            }
+            imageGallery.appendChild(pagination);
+        }
+
+        async function fetchImages(query) {
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch images');
+                }
+                let images = await response.json();
+                if (query) {
+                    images = images.filter(image => image.author.toLowerCase().includes(query.toLowerCase()));
+                }
+                return images;
+            } catch (error) {
+                console.error(error);
+                throw error;
+            }
+        }
+
+        function debounce(func, delay) {
+            let timeout;
+            return (...args) => {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
+
+        async function fetchAndRenderImages() {
+            if (loading) return;
+
+            loading = true;
+            showLoadingOverlay();
+
+            try {
+                const fetchedImages = await fetchImages(query);
+                totalImages = fetchedImages.length;
+                if (isInfiniteScrolling) {
+                    images = [...images, ...fetchedImages.slice((page - 1) * limit, page * limit)];
+                } else {
+                    images = fetchedImages.slice((page - 1) * limit, page * limit);
+                }
+                renderImages();
+                renderPagination(page, Math.ceil(totalImages / limit));
+            } catch (error) {
+                console.error(error);
+            } finally {
+                loading = false;
+                hideLoadingOverlay();
+            }
+        }
+
+        function handleSearch(searchQuery) {
+            query = searchQuery;
+            page = 1;
+            images = [];
+            fetchAndRenderImages();
+        }
+
+        function handlePageChange(selectedPage) {
+            page = selectedPage;
+            fetchAndRenderImages();
+        }
+
+        function toggleScrollingMode() {
+            isInfiniteScrolling = !isInfiniteScrolling;
+            page = 1;
+            images = [];
+            fetchAndRenderImages();
+        }
+
+        function handleScroll() {
+            if (!isInfiniteScrolling) return;
+
+            if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) {
+                page++;
+                fetchAndRenderImages();
+            }
+        }
+
+        function renderImages() {
+            imagesContainer.innerHTML = '';
+            images.forEach(image => {
+                const container = document.createElement('div');
+                container.className = 'image-item';
+                const img = document.createElement('img');
+                img.src = image.download_url;
+                img.alt = image.author;
+                img.addEventListener('mouseover', () => showPreview(image));
+                img.addEventListener('mouseout', hidePreview);
+                container.appendChild(img);
+                imagesContainer.appendChild(container);
+            });
+        }
+
+        function showPreview(image) {
+            const previewImg = imagePreview.querySelector('img');
+            previewImg.src = image.download_url;
+            previewImg.alt = image.author;
+            imagePreview.style.display = 'block';
+        }
+
+        function hidePreview() {
+            imagePreview.style.display = 'none';
+        }
+
+        function showLoadingOverlay() {
+            loadingOverlay.style.display = 'flex';
+        }
+
+        function hideLoadingOverlay() {
+            loadingOverlay.style.display = 'none';
+        }
+    </script>
